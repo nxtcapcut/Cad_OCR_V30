@@ -1,0 +1,1353 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CAD Batch OCR & PDF Overlay - v30.0</title>
+
+  <!-- ==================== 1. THƯ VIỆN NẠP TRONG <HEAD> ==================== -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              purple: '#7c3aed',
+              amber: '#f59e0b',
+              accent: '#8b5cf6'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Thanh cuộn tối màu cho dân kỹ thuật */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #090d16; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #334155; }
+    .overlay-box {
+      position: absolute;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      line-height: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      font-weight: 600;
+    }
+  </style>
+</head>
+
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-purple-600 selection:text-white">
+
+  <!-- ==================== HEADER CỐ ĐỊNH ==================== -->
+  <header class="sticky top-0 z-40 bg-slate-900/90 backdrop-blur border-b border-slate-800 px-6 py-3">
+    <div class="max-w-[1700px] mx-auto flex flex-wrap items-center justify-between gap-4">
+      
+      <!-- Logo, Tên công cụ & Badge Version v30.0 -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-gradient-to-tr from-purple-600 via-indigo-600 to-amber-500 flex items-center justify-center shadow-lg shadow-purple-950/40">
+          <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+            CAD Batch OCR & PDF Overlay
+            <span class="px-2 py-0.5 rounded bg-emerald-400 text-slate-950 font-mono font-bold text-[10px]">v30.0</span>
+            <span class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800/60 font-mono">Quota Tracker</span>
+          </h1>
+          <p class="text-xs text-slate-400">Tự động giám sát Quota gọi AI - PDF Vector Text nổi bật bôi đen copy được</p>
+        </div>
+      </div>
+
+      <!-- Cấu hình API, Model & Bộ đếm Quota -->
+      <div class="flex items-center flex-wrap gap-3">
+        <!-- 1. Danh sách Model chuẩn xác -->
+        <div class="flex items-center gap-2 bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-lg text-xs">
+          <label for="modelSelect" class="text-slate-400 font-medium">Model:</label>
+          <select id="modelSelect" class="bg-transparent text-purple-300 focus:outline-none cursor-pointer font-semibold">
+            <option value="gemini-2.0-flash" selected class="bg-slate-900 text-slate-100">gemini-2.0-flash (Khuyên dùng - Ổn định nhất)</option>
+            <option value="gemini-1.5-flash-latest" class="bg-slate-900 text-slate-100">gemini-1.5-flash-latest</option>
+            <option value="gemini-1.5-flash-8b" class="bg-slate-900 text-slate-100">gemini-1.5-flash-8b (Quota lớn)</option>
+            <option value="gemini-3.8-flash" class="bg-slate-900 text-slate-100">gemini-3.8-flash (Preview - 20 lượt/ngày)</option>
+            <option value="gemini-2.5-flash" class="bg-slate-900 text-slate-100">gemini-2.5-flash</option>
+          </select>
+        </div>
+
+        <!-- 2. Huy hiệu theo dõi lượt gọi Quota API -->
+        <div id="quotaBadge" class="bg-slate-950 border border-slate-800 px-2.5 py-1 rounded text-[11px] font-mono text-slate-300 flex items-center gap-1.5 shadow-inner" title="Số lượt đã gọi thành công trong ngày hôm nay">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 transition-colors" id="quotaDot"></span>
+          <span>Đã dùng: <strong id="usedCount" class="text-white">0</strong>/<span id="limitCount">1500</span> lượt</span>
+        </div>
+
+        <!-- Ô nhập API Key -->
+        <div class="relative flex items-center">
+          <input 
+            type="password" 
+            id="apiKeyInput" 
+            placeholder="Dán Gemini API Key tại đây..." 
+            class="w-60 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 pr-9 text-xs focus:ring-1 focus:ring-purple-500 focus:border-purple-500 focus:outline-none transition-all placeholder:text-slate-600"
+          />
+          <button id="toggleApiKey" title="Ẩn/Hiện API Key" class="absolute right-2 text-slate-400 hover:text-white p-1">
+            <svg id="eyeIcon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- ==================== WORKSPACE CHÍNH (BỐ CỤC 2 CỘT) ==================== -->
+  <main class="max-w-[1700px] w-full mx-auto flex-1 grid grid-cols-12 gap-5 p-5">
+    
+    <!-- CỘT TRÁI: QUEUE & UPLOAD (4 CỘT) -->
+    <div class="col-span-12 lg:col-span-4 flex flex-col gap-4">
+      
+      <!-- Khung Kéo Thả File Chuẩn Xác -->
+      <div 
+        id="dropZone" 
+        class="border-2 border-dashed border-slate-700 hover:border-purple-500/80 bg-slate-900/60 hover:bg-purple-950/10 rounded-xl p-6 text-center cursor-pointer transition-all duration-200 group"
+      >
+        <input type="file" id="fileInput" multiple accept="image/*" class="hidden" />
+        <div class="flex flex-col items-center justify-center gap-2 pointer-events-none">
+          <div class="w-12 h-12 rounded-full bg-slate-800 group-hover:bg-purple-600/20 text-purple-400 flex items-center justify-center transition-colors">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+          </div>
+          <p class="text-sm font-semibold text-slate-200">Kéo & thả bản vẽ kỹ thuật vào đây</p>
+          <p class="text-xs text-slate-400">hoặc <span class="text-purple-400 underline underline-offset-2">bấm để chọn từ máy</span></p>
+          <span class="text-[11px] text-slate-500 font-mono mt-1">Hỗ trợ: PNG, JPG, JPEG, WEBP, BMP (Nhiều bản vẽ)</span>
+        </div>
+      </div>
+
+      <!-- Bảng điều khiển tác vụ hàng loạt -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-wrap gap-2">
+        <button id="btnStartOcr" class="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-all shadow-md shadow-purple-900/40 disabled:opacity-50 disabled:cursor-not-allowed">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          <span>Bắt đầu OCR</span>
+        </button>
+
+        <button id="btnDownloadAllZip" disabled class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow" title="Tải trọn bộ 3 file mỗi bản vẽ: .txt, _khung_ten.txt và _overlay.pdf">
+          <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+          <span id="btnDownloadAllZipText">Tất cả (.ZIP)</span>
+        </button>
+
+        <button id="btnDownloadPdfZip" disabled class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow" title="Chỉ tải các bản vẽ PDF Overlay">
+          <svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+          <span id="btnDownloadPdfZipText">PDF .ZIP</span>
+        </button>
+      </div>
+
+      <!-- Danh Sách Hàng Đợi (Queue List) -->
+      <div class="flex-1 bg-slate-900/80 border border-slate-800 rounded-xl flex flex-col overflow-hidden max-h-[calc(100vh-320px)]">
+        <div class="px-4 py-2.5 border-b border-slate-800 flex justify-between items-center bg-slate-900">
+          <span class="text-xs font-semibold text-slate-300">Danh sách bản vẽ (<span id="queueCount">0</span>)</span>
+          <button id="btnClearQueue" class="text-[11px] text-slate-500 hover:text-red-400 transition-colors">Xoá toàn bộ</button>
+        </div>
+        <div id="queueContainer" class="p-2 overflow-y-auto space-y-2 flex-1">
+          <div class="text-center py-16 text-slate-600 text-xs italic">
+            Chưa có bản vẽ nào. Hãy kéo ảnh vào khung trên.
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- CỘT PHẢI: VIEWER & KẾT QUẢ VĂN BẢN (8 CỘT) -->
+    <div class="col-span-12 lg:col-span-8 flex flex-col gap-4">
+
+      <!-- THANH CÔNG CỤ PREVIEW -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div class="flex items-center gap-4">
+          <label class="flex items-center gap-2 cursor-pointer font-medium">
+            <input type="checkbox" id="toggleOverlay" checked class="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 bg-slate-950 border-slate-700">
+            <span>Hiển thị Lớp Chữ Đè (Overlay)</span>
+          </label>
+
+          <div class="flex items-center gap-1.5 pl-3 border-l border-slate-800">
+            <span class="text-slate-400">Màu chữ:</span>
+            <input type="color" id="overlayColor" value="#7c3aed" class="w-6 h-6 rounded border-0 bg-transparent cursor-pointer" title="Chọn màu chữ overlay">
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button id="btnExportSingleTxt" disabled class="bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-200 px-2.5 py-1.5 rounded flex items-center gap-1 transition-all">
+            <span>Tải .TXT</span>
+          </button>
+          <button id="btnExportTitleBlockTxt" disabled class="bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-200 px-2.5 py-1.5 rounded flex items-center gap-1 transition-all">
+            <span>Tải Khung tên .TXT</span>
+          </button>
+          <button id="btnExportSinglePdf" disabled class="bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium px-3 py-1.5 rounded flex items-center gap-1 shadow transition-all">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+            <span id="btnExportSinglePdfText">Tải PDF Overlay</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- WORKSPACE CHIA ĐÔI: KHUNG XEM ẢNH & KẾT QUẢ VĂN BẢN -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-[580px]">
+        
+        <!-- Khung Preview Bản Vẽ với Lớp Chữ Đè -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-col">
+          <div class="text-xs font-semibold text-slate-400 mb-2 flex justify-between items-center">
+            <span>Bản vẽ trực quan: <span id="currentImageName" class="text-slate-200 font-mono">Chưa chọn</span></span>
+            <span id="imageResolution" class="text-[11px] text-slate-500"></span>
+          </div>
+          <div id="canvasViewport" class="relative flex-1 bg-slate-950 rounded-lg overflow-auto border border-slate-800/80 flex items-center justify-center p-2 min-h-[350px]">
+            <div id="renderWrapper" class="relative inline-block max-w-full">
+              <img id="previewImage" class="max-w-full max-h-[600px] object-contain select-none block" />
+              <div id="overlayLayer" class="absolute inset-0 pointer-events-none"></div>
+            </div>
+            <div id="emptyPreviewNotice" class="text-xs text-slate-600 italic">Chọn một bản vẽ từ danh sách bên trái để xem</div>
+          </div>
+        </div>
+
+        <!-- Khung Văn Bản Trích Xuất (Tabs) -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl flex flex-col overflow-hidden">
+          
+          <!-- Tabs Navigation -->
+          <div class="flex border-b border-slate-800 bg-slate-950/60 px-2 pt-2 gap-2 text-xs">
+            <button id="tabBtn1" class="px-4 py-2 font-medium border-b-2 border-purple-500 text-purple-400 transition-colors">
+              Text 1 cột (Toàn bộ)
+            </button>
+            <button id="tabBtn2" class="px-4 py-2 font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition-colors">
+              Khung tên (Title Block)
+            </button>
+          </div>
+
+          <!-- Nội Dung Tab 1: Text 1 Cột -->
+          <div id="tabContent1" class="flex-1 p-3 flex flex-col">
+            <div class="flex justify-between items-center mb-2">
+              <span class="text-[11px] text-slate-400">Sắp xếp tự nhiên: Trên xuống dưới, Trái sang phải</span>
+              <button id="btnCopyCol1" class="text-[11px] text-purple-400 hover:underline">Sao chép</button>
+            </div>
+            <textarea id="textContent1" readonly placeholder="Nội dung bóc tách toàn bộ bản vẽ sẽ hiển thị ở đây..." class="w-full flex-1 bg-slate-950 border border-slate-800 rounded-lg p-3 font-mono text-xs text-slate-300 resize-none focus:outline-none"></textarea>
+          </div>
+
+          <!-- Nội Dung Tab 2: Khung Tên Title Block -->
+          <div id="tabContent2" class="flex-1 p-3 flex flex-col hidden">
+            <div class="flex justify-between items-center mb-2">
+              <span class="text-[11px] text-amber-400/90 font-medium">Bóc tách riêng vùng góc dưới phải bản vẽ kỹ thuật</span>
+              <button id="btnCopyTitleBlock" class="text-[11px] text-purple-400 hover:underline">Sao chép</button>
+            </div>
+            <textarea id="textTitleBlock" readonly placeholder="Thông tin khung tên (Tên dự án, Mã bản vẽ, Tỷ lệ, Người vẽ, Ngày tháng...) sẽ lọc ở đây..." class="w-full flex-1 bg-slate-950 border border-slate-800 rounded-lg p-3 font-mono text-xs text-slate-300 resize-none focus:outline-none"></textarea>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- ==================== MODAL CẢNH BÁO HẠN MỨC QUOTA ==================== -->
+  <div id="quotaModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-150">
+      <div class="flex items-start gap-4">
+        <div class="w-12 h-12 rounded-xl bg-red-950/80 border border-red-800 text-red-400 flex items-center justify-center flex-shrink-0">
+          <svg class="w-6 h-6 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+        </div>
+        <div class="flex-1">
+          <h3 class="text-base font-bold text-white mb-1">Cảnh Báo: Hết Hạn Mức Quota API (429)</h3>
+          <p class="text-xs text-slate-300 mb-3 leading-relaxed">
+            Đã hết hạn mức gọi hôm nay cho model <span id="quotaModalModel" class="text-purple-300 font-bold font-mono"></span>! Vui lòng chuyển sang <strong class="text-amber-400">gemini-1.5-flash-latest</strong> hoặc nhập API Key khác để tiếp tục.
+          </p>
+          <div id="quotaModalDetails" class="bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-[11px] font-mono text-amber-300 mb-4 break-all max-h-24 overflow-y-auto"></div>
+          <div class="flex flex-wrap gap-2 justify-end">
+            <button id="btnSwitchToFlashLatest" class="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-semibold transition-all shadow-md shadow-purple-900/40">
+              Đổi sang gemini-1.5-flash-latest
+            </button>
+            <button id="btnSwitchToFlash8b" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-all">
+              Đổi sang 1.5-flash-8b
+            </button>
+            <button id="btnCloseQuotaModal" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs transition-all">
+              Đóng
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== JAVASCRIPT LOGIC ==================== -->
+  <script>
+    // --- QUY ĐỊNH ĐỊNH MỨC QUOTA CỦA TỪNG MODEL ---
+    const QUOTA_LIMITS = {
+      'gemini-3.8-flash': 20,
+      'gemini-2.0-flash': 1500,
+      'gemini-1.5-flash-latest': 1500,
+      'gemini-1.5-flash': 1500,
+      'gemini-1.5-flash-8b': 1500,
+      'gemini-2.5-flash': 20
+    };
+
+    // --- QUẢN LÝ TRẠNG THÁI (STATE) ---
+    const STATE = {
+      apiKey: localStorage.getItem('gemini_cad_key') || '',
+      selectedModel: 'gemini-2.0-flash',
+      queue: [], // { id, file, originalImgUrl, previewUrl, width, height, status: 'Chờ'|'Đang đọc...'|'Hoàn tất'|'Lỗi', ocrData: null, result: null, errorMsg: null }
+      selectedIndex: -1,
+      isProcessing: false,
+      overlayColor: '#7c3aed',
+      textColor: '#7c3aed',
+      showOverlay: true,
+      activeTab: 1
+    };
+
+    // --- DOM REFERENCES ---
+    const dom = {
+      apiKeyInput: document.getElementById('apiKeyInput'),
+      toggleApiKey: document.getElementById('toggleApiKey'),
+      eyeIcon: document.getElementById('eyeIcon'),
+      modelSelect: document.getElementById('modelSelect'),
+      dropZone: document.getElementById('dropZone'),
+      fileInput: document.getElementById('fileInput'),
+      queueContainer: document.getElementById('queueContainer'),
+      queueCount: document.getElementById('queueCount'),
+      btnClearQueue: document.getElementById('btnClearQueue'),
+      btnStartOcr: document.getElementById('btnStartOcr'),
+      btnDownloadAllZip: document.getElementById('btnDownloadAllZip'),
+      btnDownloadAllZipText: document.getElementById('btnDownloadAllZipText'),
+      btnDownloadPdfZip: document.getElementById('btnDownloadPdfZip'),
+      btnDownloadPdfZipText: document.getElementById('btnDownloadPdfZipText'),
+      toggleOverlay: document.getElementById('toggleOverlay'),
+      overlayColor: document.getElementById('overlayColor'),
+      previewImage: document.getElementById('previewImage'),
+      overlayLayer: document.getElementById('overlayLayer'),
+      renderWrapper: document.getElementById('renderWrapper'),
+      emptyPreviewNotice: document.getElementById('emptyPreviewNotice'),
+      currentImageName: document.getElementById('currentImageName'),
+      imageResolution: document.getElementById('imageResolution'),
+      tabBtn1: document.getElementById('tabBtn1'),
+      tabBtn2: document.getElementById('tabBtn2'),
+      tabContent1: document.getElementById('tabContent1'),
+      tabContent2: document.getElementById('tabContent2'),
+      textContent1: document.getElementById('textContent1'),
+      textTitleBlock: document.getElementById('textTitleBlock'),
+      btnCopyCol1: document.getElementById('btnCopyCol1'),
+      btnCopyTitleBlock: document.getElementById('btnCopyTitleBlock'),
+      btnExportSingleTxt: document.getElementById('btnExportSingleTxt'),
+      btnExportTitleBlockTxt: document.getElementById('btnExportTitleBlockTxt'),
+      btnExportSinglePdf: document.getElementById('btnExportSinglePdf'),
+      btnExportSinglePdfText: document.getElementById('btnExportSinglePdfText'),
+      // Quota Tracker Elements
+      quotaDot: document.getElementById('quotaDot'),
+      usedCount: document.getElementById('usedCount'),
+      limitCount: document.getElementById('limitCount'),
+      quotaModal: document.getElementById('quotaModal'),
+      quotaModalModel: document.getElementById('quotaModalModel'),
+      quotaModalDetails: document.getElementById('quotaModalDetails'),
+      btnSwitchToFlashLatest: document.getElementById('btnSwitchToFlashLatest'),
+      btnSwitchToFlash8b: document.getElementById('btnSwitchToFlash8b'),
+      btnCloseQuotaModal: document.getElementById('btnCloseQuotaModal')
+    };
+
+    // --- QUẢN LÝ BỘ ĐẾM QUOTA TRONG LOCALSTORAGE ---
+    function getTodayDateString() {
+      const d = new Date();
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    function getQuotaStorage() {
+      const today = getTodayDateString();
+      try {
+        const raw = localStorage.getItem('gemini_cad_quota_tracker');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && parsed.date === today && parsed.counts) {
+            return parsed;
+          }
+        }
+      } catch (e) {
+        console.warn("Lỗi đọc quota storage:", e);
+      }
+      // Khởi tạo mới hoặc tự động reset khi sang ngày mới (qua 00:00)
+      const freshData = { date: today, counts: {} };
+      saveQuotaStorage(freshData);
+      return freshData;
+    }
+
+    function saveQuotaStorage(data) {
+      try {
+        localStorage.setItem('gemini_cad_quota_tracker', JSON.stringify(data));
+      } catch (e) {}
+    }
+
+    function getModelUsage(model) {
+      const store = getQuotaStorage();
+      return store.counts[model] || 0;
+    }
+
+    function getModelQuotaLimit(model) {
+      return QUOTA_LIMITS[model] || 1500;
+    }
+
+    function incrementModelUsage(model) {
+      const store = getQuotaStorage();
+      store.counts[model] = (store.counts[model] || 0) + 1;
+      saveQuotaStorage(store);
+      updateQuotaBadge();
+    }
+
+    function updateQuotaBadge() {
+      const model = STATE.selectedModel;
+      const used = getModelUsage(model);
+      const limit = getModelQuotaLimit(model);
+
+      dom.usedCount.textContent = used;
+      dom.limitCount.textContent = limit;
+
+      // Xóa tất cả trạng thái màu cũ
+      dom.quotaDot.className = 'w-2 h-2 rounded-full transition-colors';
+
+      if (used >= limit) {
+        // Đã hết lượt: Chấm đỏ nhấp nháy
+        dom.quotaDot.classList.add('bg-red-500', 'animate-pulse');
+      } else if (used >= Math.floor(limit * 0.9)) {
+        // Sắp hết (>= 90%): Đổi màu vàng cam
+        dom.quotaDot.classList.add('bg-amber-400');
+      } else {
+        // Bình thường: Màu xanh lục
+        dom.quotaDot.classList.add('bg-emerald-400');
+      }
+    }
+
+    function showQuotaModal(modelName, errorDetails) {
+      dom.quotaModalModel.textContent = modelName;
+      dom.quotaModalDetails.textContent = errorDetails || "Resource has been exhausted (check quota or rate limit).";
+      dom.quotaModal.classList.remove('hidden');
+    }
+
+    function hideQuotaModal() {
+      dom.quotaModal.classList.add('hidden');
+    }
+
+    // --- KHỞI TẠO ỨNG DỤNG ---
+    function init() {
+      if (STATE.apiKey) {
+        dom.apiKeyInput.value = STATE.apiKey;
+      }
+      dom.apiKeyInput.addEventListener('input', (e) => {
+        STATE.apiKey = e.target.value.trim();
+        localStorage.setItem('gemini_cad_key', STATE.apiKey);
+      });
+
+      dom.toggleApiKey.addEventListener('click', () => {
+        const type = dom.apiKeyInput.getAttribute('type') === 'password' ? 'text' : 'password';
+        dom.apiKeyInput.setAttribute('type', type);
+      });
+
+      dom.modelSelect.value = STATE.selectedModel;
+      dom.modelSelect.addEventListener('change', (e) => {
+        STATE.selectedModel = e.target.value;
+        updateQuotaBadge();
+      });
+
+      // Cập nhật bộ đếm quota ngay khi mở trang
+      updateQuotaBadge();
+
+      // Sự kiện tương tác Modal Quota
+      dom.btnCloseQuotaModal.addEventListener('click', hideQuotaModal);
+      dom.btnSwitchToFlashLatest.addEventListener('click', () => {
+        dom.modelSelect.value = 'gemini-1.5-flash-latest';
+        STATE.selectedModel = 'gemini-1.5-flash-latest';
+        updateQuotaBadge();
+        hideQuotaModal();
+      });
+      dom.btnSwitchToFlash8b.addEventListener('click', () => {
+        dom.modelSelect.value = 'gemini-1.5-flash-8b';
+        STATE.selectedModel = 'gemini-1.5-flash-8b';
+        updateQuotaBadge();
+        hideQuotaModal();
+      });
+
+      // --- CƠ CHẾ KÉO THẢ CHUẨN XÁC KHÔNG BỊ TRÌNH DUYỆT NUỐT SỰ KIỆN ---
+      ["dragenter", "dragover", "dragleave", "drop"].forEach(name => {
+        dom.dropZone.addEventListener(name, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        });
+        window.addEventListener(name, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        });
+      });
+
+      ["dragenter", "dragover"].forEach(name => {
+        dom.dropZone.addEventListener(name, () => {
+          dom.dropZone.classList.add("border-purple-500", "bg-purple-950/20");
+        });
+      });
+
+      ["dragleave", "drop"].forEach(name => {
+        dom.dropZone.addEventListener(name, () => {
+          dom.dropZone.classList.remove("border-purple-500", "bg-purple-950/20");
+        });
+      });
+
+      dom.dropZone.addEventListener("drop", (e) => {
+        const dt = e.dataTransfer;
+        if (dt && dt.files && dt.files.length) {
+          handleFiles(dt.files);
+        }
+      });
+
+      dom.dropZone.addEventListener("click", () => {
+        dom.fileInput.click();
+      });
+
+      dom.fileInput.addEventListener("change", (e) => {
+        if (e.target.files && e.target.files.length) {
+          handleFiles(e.target.files);
+        }
+        dom.fileInput.value = "";
+      });
+
+      dom.btnClearQueue.addEventListener('click', clearQueue);
+      dom.btnStartOcr.addEventListener('click', startBatchOcr);
+      dom.btnDownloadAllZip.addEventListener('click', downloadAllZip);
+      dom.btnDownloadPdfZip.addEventListener('click', downloadPdfZip);
+
+      // Điều khiển Overlay & Bảng chọn màu
+      dom.toggleOverlay.addEventListener('change', (e) => {
+        STATE.showOverlay = e.target.checked;
+        dom.overlayLayer.style.display = STATE.showOverlay ? 'block' : 'none';
+      });
+      dom.overlayColor.addEventListener('input', (e) => {
+        STATE.overlayColor = e.target.value;
+        STATE.textColor = e.target.value;
+        renderOverlayItems();
+      });
+
+      // Tabs
+      dom.tabBtn1.addEventListener('click', () => switchTab(1));
+      dom.tabBtn2.addEventListener('click', () => switchTab(2));
+
+      // Sao chép nhanh
+      dom.btnCopyCol1.addEventListener('click', () => copyToClipboard(dom.textContent1.value));
+      dom.btnCopyTitleBlock.addEventListener('click', () => copyToClipboard(dom.textTitleBlock.value));
+
+      // Xuất file đơn lẻ
+      dom.btnExportSingleTxt.addEventListener('click', exportSingleTxt);
+      dom.btnExportTitleBlockTxt.addEventListener('click', exportSingleTitleBlock);
+      dom.btnExportSinglePdf.addEventListener('click', exportSinglePdf);
+
+      window.addEventListener('resize', () => {
+        if (STATE.selectedIndex !== -1) renderOverlayItems();
+      });
+    }
+
+    // Cập nhật trạng thái các nút xuất ZIP
+    function updateBatchActionButtons() {
+      const hasCompleted = STATE.queue.some(item => item.status === 'Hoàn tất' && (item.result || item.ocrData));
+      dom.btnDownloadAllZip.disabled = !hasCompleted;
+      dom.btnDownloadPdfZip.disabled = !hasCompleted;
+    }
+
+    // Đọc file thành DataURL bằng FileReader
+    function readFileAsDataURL(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // Lấy kích thước ảnh từ DataURL
+    function getImageDimensionsFromDataUrl(dataUrl) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve({ width: img.naturalWidth || 1200, height: img.naturalHeight || 800 });
+        img.onerror = () => resolve({ width: 1200, height: 800 });
+        img.src = dataUrl;
+      });
+    }
+
+    // --- 2. CƠ CHẾ TỰ ĐỘNG THỬ LẠI MODEL DỰ PHÒNG (AUTO-FALLBACK ENGINE) ---
+    async function callGeminiOcr(base64Data, mimeType, apiKey, initialModel) {
+      const candidateModels = Array.from(new Set([
+        initialModel,
+        'gemini-2.0-flash',
+        'gemini-1.5-flash-latest',
+        'gemini-1.5-flash-8b',
+        'gemini-2.5-flash'
+      ])).filter(Boolean);
+
+      let lastError = null;
+      let hit429 = false;
+      let last429Model = null;
+      let last429Message = "";
+
+      for (const model of candidateModels) {
+        try {
+          console.log(`Đang gọi Gemini OCR với model: ${model}...`);
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+          const promptText = `
+Bạn là chuyên gia số hóa bản vẽ CAD và sơ đồ điện chuyên nghiệp.
+Nhiệm vụ: Trích xuất TOÀN BỘ ký tự văn bản, mã thiết bị, thông số, nhãn dây, kích thước và nội dung khung tên trong hình vẽ kỹ thuật này.
+Nhận diện cả chữ nằm ngang, chữ nằm dọc và chữ xoay nghiêng các góc.
+Yêu cầu bắt buộc về BoundingBox:
+- BoundingBox định dạng [ymin, xmin, ymax, xmax] theo thang đo chuẩn hóa từ 0 đến 1000.
+- Độ bao phủ hộp phải ôm sát từng từ/cụm từ tương ứng.
+- Đảm bảo trích xuất chính xác cả văn bản trong Khung tên (Title Block) ở góc bản vẽ.
+
+Trả về duy nhất định dạng JSON thuần tuý với cấu trúc:
+{
+  "textItems": [
+    {
+      "text": "nội dung chữ",
+      "boundingBox": [ymin, xmin, ymax, xmax],
+      "rotation": 0
+    }
+  ]
+}`;
+
+          const payload = {
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  { text: promptText },
+                  {
+                    inline_data: {
+                      mime_type: mimeType,
+                      data: base64Data
+                    }
+                  }
+                ]
+              }
+            ],
+            generationConfig: {
+              response_mime_type: "application/json",
+              temperature: 0.1
+            }
+          };
+
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          if (!response.ok) {
+            const errorJson = await response.json().catch(() => ({}));
+            const errDetail = errorJson.error?.message || response.statusText;
+            const statusMsg = `HTTP ${response.status} (${errDetail})`;
+
+            if (response.status === 429) {
+              hit429 = true;
+              last429Model = model;
+              last429Message = errDetail;
+            }
+
+            console.warn(`Model ${model} thất bại [${statusMsg}], tự động chuyển sang model tiếp theo...`);
+            lastError = new Error(`[${model}] ${statusMsg}`);
+            continue;
+          }
+
+          const jsonResp = await response.json();
+          let rawText = jsonResp.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (!rawText) {
+            console.warn(`Model ${model} phản hồi rỗng, thử model tiếp theo...`);
+            lastError = new Error(`[${model}] Phản hồi rỗng`);
+            continue;
+          }
+
+          // Làm sạch markdown nếu có
+          rawText = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+          const parsed = JSON.parse(rawText);
+          if (!parsed || !Array.isArray(parsed.textItems)) {
+            throw new Error("Dữ liệu JSON không chứa mảng textItems hợp lệ");
+          }
+
+          console.log(`Model ${model} OCR thành công: ${parsed.textItems.length} text items`);
+          return { parsed, usedModel: model };
+        } catch (err) {
+          console.warn(`Lỗi khi gọi model ${model}:`, err.message);
+          lastError = err;
+        }
+      }
+
+      // Xử lý ném lỗi nếu tất cả model đều thất bại
+      const finalError = new Error(`Tất cả các model đều thất bại. Lỗi cuối: ${lastError?.message || 'Không rõ nguyên nhân'}`);
+      if (hit429) {
+        finalError.is429 = true;
+        finalError.model = last429Model;
+        finalError.message = last429Message || finalError.message;
+      }
+      throw finalError;
+    }
+
+    // --- 3. XỬ LÝ HÀNG LOẠT VỚI LOGIC BÁO LỖI THỰC CHẤT VÀ TẠM DỪNG KHI DÍNH 429 ---
+    async function startBatchOcr() {
+      if (!STATE.apiKey) {
+        alert('Vui lòng nhập Google Gemini API Key trên thanh tiêu đề!');
+        dom.apiKeyInput.focus();
+        return;
+      }
+
+      if (STATE.isProcessing) return;
+      STATE.isProcessing = true;
+      dom.btnStartOcr.disabled = true;
+
+      for (let i = 0; i < STATE.queue.length; i++) {
+        const item = STATE.queue[i];
+        if (item.status === 'Hoàn tất' && (item.result || item.ocrData)) continue;
+
+        item.status = 'Đang đọc...';
+        item.errorMsg = null;
+        renderQueueList();
+
+        try {
+          const { base64Data, mimeType } = await prepareOptimizedBase64(item.previewUrl || item.originalImgUrl);
+          
+          // Gọi API với cơ chế tự động Fallback
+          const ocrResponse = await callGeminiOcr(base64Data, mimeType, STATE.apiKey, STATE.selectedModel);
+          const ocrResult = ocrResponse.parsed;
+
+          // CẬP NHẬT BỘ ĐẾM QUOTA CHO MODEL ĐÃ GỌI THÀNH CÔNG
+          incrementModelUsage(ocrResponse.usedModel);
+
+          // CHỈ KHI TRÍCH XUẤT THÀNH CÔNG MỚI ĐÁNH DẤU HOÀN TẤT
+          item.ocrData = ocrResult;
+          item.result = ocrResult;
+          item.status = 'Hoàn tất';
+          item.errorMsg = null;
+        } catch (err) {
+          console.error(`Bản vẽ ${item.name} OCR thất bại:`, err);
+          item.status = 'Lỗi';
+          item.errorMsg = err.message || 'Lỗi bóc tách';
+          item.result = null;
+          item.ocrData = null;
+
+          // CẢNH BÁO CHỦ ĐỘNG KHI GẶP LỖI 429 QUOTA EXCEEDED
+          if (err.is429) {
+            // Đổi chấm quota sang màu đỏ nhấp nháy
+            dom.quotaDot.className = 'w-2 h-2 rounded-full bg-red-500 animate-pulse';
+            
+            // Hiển thị modal cảnh báo nổi bật
+            showQuotaModal(err.model || STATE.selectedModel, err.message);
+
+            // Tự động tạm dừng hàng đợi batch để không tốn công chạy tiếp các file còn lại
+            renderQueueList();
+            updateBatchActionButtons();
+            if (STATE.selectedIndex === i) {
+              selectQueueItem(i);
+            }
+            break;
+          }
+        }
+
+        renderQueueList();
+        updateBatchActionButtons();
+        if (STATE.selectedIndex === i) {
+          selectQueueItem(i);
+        }
+
+        // Quãng nghỉ 1.5 giây giữa các bản vẽ để chống dính hạn mức gọi nhanh (Rate Limit)
+        if (i < STATE.queue.length - 1) {
+          await new Promise(r => setTimeout(r, 1500));
+        }
+      }
+
+      STATE.isProcessing = false;
+      dom.btnStartOcr.disabled = false;
+      updateBatchActionButtons();
+    }
+
+    // Nén ảnh qua Canvas (Tối đa 1800px, JPEG chất lượng 0.82)
+    function prepareOptimizedBase64(imgUrl) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          let w = img.naturalWidth;
+          let h = img.naturalHeight;
+          const maxDimension = 1800;
+
+          if (w > maxDimension || h > maxDimension) {
+            if (w > h) {
+              h = Math.round((h * maxDimension) / w);
+              w = maxDimension;
+            } else {
+              w = Math.round((w * maxDimension) / h);
+              h = maxDimension;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+          const base64Data = dataUrl.split(',')[1];
+          resolve({ base64Data, mimeType: 'image/jpeg' });
+        };
+        img.onerror = reject;
+        img.src = imgUrl;
+      });
+    }
+
+    // --- 4. HÀM TẠO PDF OVERLAY VECTOR TEXT NỔI BẬT TRÊN ẢNH NỀN ---
+    async function generatePdfOverlay(item) {
+      const jspdfLib = window.jspdf || {};
+      const jsPDF = jspdfLib.jsPDF || window.jsPDF;
+      if (!jsPDF) {
+        alert("Thư viện jsPDF chưa tải xong. Vui lòng tải lại trang!");
+        return null;
+      }
+
+      // Đảm bảo ảnh đã tải xong hoàn toàn vào bộ nhớ để lấy kích thước width/height thực tế
+      const img = new Image();
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = item.previewUrl || item.originalImgUrl;
+      });
+      const imgW = img.naturalWidth || img.width || 1600;
+      const imgH = img.naturalHeight || img.height || 1200;
+
+      // Khởi tạo jsPDF theo đơn vị pixel/point tương thích tỷ lệ ảnh
+      const orientation = imgW >= imgH ? 'l' : 'p';
+      const doc = new jsPDF({
+        orientation: orientation,
+        unit: 'pt',
+        format: [imgW, imgH]
+      });
+
+      // BƯỚC 1 (LỚP NỀN): Vẽ ảnh bản vẽ gốc làm nền đầu tiên
+      const format = (img.src && img.src.startsWith('data:image/png')) ? 'PNG' : 'JPEG';
+      try {
+        doc.addImage(img, format, 0, 0, imgW, imgH, undefined, 'FAST');
+      } catch (e) {
+        doc.addImage(img, 'JPEG', 0, 0, imgW, imgH, undefined, 'FAST');
+      }
+
+      // BƯỚC 2 (LỚP CHỮ & KHUNG VECTOR NẰM TRÊN CÙNG)
+      let hex = (STATE.textColor || STATE.overlayColor || '#7c3aed').replace('#', '').trim();
+      if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+      const r = parseInt(hex.substring(0, 2), 16) || 124;
+      const g = parseInt(hex.substring(2, 4), 16) || 58;
+      const b = parseInt(hex.substring(4, 6), 16) || 237;
+
+      const items = item.result?.textItems || item.ocrData?.textItems || [];
+
+      for (const t of items) {
+        if (!t.boundingBox) continue;
+        try {
+          const [ymin, xmin, ymax, xmax] = t.boundingBox;
+          const x = (xmin / 1000) * imgW;
+          const y = (ymin / 1000) * imgH;
+          const w = Math.max(8, ((xmax - xmin) / 1000) * imgW);
+          const h = Math.max(8, ((ymax - ymin) / 1000) * imgH);
+          const angle = Number(t.rotation) || 0;
+
+          // 1. Vẽ khung chữ nhật nổi bật viền màu overlay
+          doc.setDrawColor(r, g, b);
+          doc.setLineWidth(1.2);
+          doc.rect(x, y, w, h);
+
+          // 2. Chuẩn hóa chuỗi ASCII để font Helvetica chuẩn không bị lỗi
+          let safeText = String(t.text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7E]/g, ' ').trim();
+          if (!safeText) continue;
+
+          // 3. Tính toán cỡ chữ phù hợp với ô CAD
+          const fontSize = Math.max(7, Math.min(Math.round(h * 0.75), 28));
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(fontSize);
+          doc.setTextColor(r, g, b);
+
+          // 4. Vẽ vector text đè lên (chuột bôi đen và copy được)
+          if (angle !== 0) {
+            doc.text(safeText, x + 2, y + h * 0.8, { angle: angle });
+          } else {
+            doc.text(safeText, x + 2, y + h * 0.8);
+          }
+        } catch (errOne) {
+          console.warn("Bỏ qua lỗi vẽ chữ:", errOne);
+        }
+      }
+
+      // BƯỚC 3: Trả về file Blob PDF hoàn chỉnh
+      return doc.output('blob');
+    }
+
+    // Hàm tiện ích tải file Blob an toàn
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+
+    // --- XỬ LÝ KHI FILE ĐƯỢC CHỌN HOẶC KÉO THẢ VÀO ---
+    async function handleFiles(fileList) {
+      if (!fileList || fileList.length === 0) return;
+      const initialQueueLength = STATE.queue.length;
+
+      for (let file of Array.from(fileList)) {
+        if (!file.type.startsWith('image/') && !file.name.match(/\.(png|jpe?g|webp|bmp)$/i)) continue;
+
+        try {
+          const dataUrl = await readFileAsDataURL(file);
+          const dimensions = await getImageDimensionsFromDataUrl(dataUrl);
+
+          const item = {
+            id: 'cad_' + Math.random().toString(36).substring(2, 9),
+            file: file,
+            name: file.name,
+            originalImgUrl: dataUrl,
+            previewUrl: dataUrl,
+            width: dimensions.width,
+            height: dimensions.height,
+            status: 'Chờ',
+            ocrData: null,
+            result: null,
+            errorMsg: null
+          };
+
+          STATE.queue.push(item);
+        } catch (err) {
+          console.error("Lỗi khi đọc file:", file.name, err);
+        }
+      }
+
+      renderQueueList();
+      updateBatchActionButtons();
+
+      if (initialQueueLength === 0 && STATE.queue.length > 0) {
+        selectQueueItem(0);
+      } else if (STATE.selectedIndex === -1 && STATE.queue.length > 0) {
+        selectQueueItem(0);
+      }
+    }
+
+    function clearQueue() {
+      STATE.queue = [];
+      STATE.selectedIndex = -1;
+      renderQueueList();
+      resetViewer();
+      updateBatchActionButtons();
+    }
+
+    // --- RENDER HÀNG ĐỢI GIAO DIỆN ---
+    function renderQueueList() {
+      dom.queueCount.textContent = STATE.queue.length;
+      if (STATE.queue.length === 0) {
+        dom.queueContainer.innerHTML = `
+          <div class="text-center py-16 text-slate-600 text-xs italic">
+            Chưa có bản vẽ nào. Hãy kéo ảnh vào khung trên.
+          </div>`;
+        return;
+      }
+
+      dom.queueContainer.innerHTML = '';
+      STATE.queue.forEach((item, index) => {
+        const isSelected = index === STATE.selectedIndex;
+        const itemEl = document.createElement('div');
+        itemEl.className = `p-2.5 rounded-lg border flex items-center justify-between gap-3 cursor-pointer transition-all ${
+          isSelected ? 'bg-purple-950/40 border-purple-600/70 shadow-sm' : 'bg-slate-950/70 border-slate-800 hover:border-slate-700'
+        }`;
+
+        let statusBadge = '';
+        if (item.status === 'Chờ') {
+          statusBadge = '<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-medium">Chờ</span>';
+        } else if (item.status === 'Đang đọc...') {
+          statusBadge = '<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800 animate-pulse font-medium">Đang đọc...</span>';
+        } else if (item.status === 'Hoàn tất') {
+          statusBadge = '<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-medium">Hoàn tất</span>';
+        } else if (item.status === 'Lỗi') {
+          statusBadge = `<span class="text-[10px] px-1.5 py-0.5 rounded bg-red-950 text-red-300 border border-red-800 font-medium" title="${item.errorMsg || 'Lỗi'}">Lỗi</span>`;
+        }
+
+        itemEl.innerHTML = `
+          <div class="flex items-center gap-2.5 overflow-hidden flex-1">
+            <img src="${item.previewUrl || item.originalImgUrl}" class="w-10 h-10 rounded object-cover border border-slate-700 flex-shrink-0 bg-slate-900" />
+            <div class="overflow-hidden flex-1">
+              <p class="text-xs font-medium text-slate-200 truncate" title="${item.name}">${item.name}</p>
+              <div class="flex items-center gap-2 mt-1">
+                ${statusBadge}
+                <span class="text-[10px] text-slate-500 font-mono">${item.width}x${item.height}px</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-1">
+            <button data-download-index="${index}" class="p-1.5 bg-slate-800 hover:bg-purple-700 rounded text-purple-300 hover:text-white transition-colors" title="Tải ngay PDF bản vẽ này">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+            </button>
+          </div>
+        `;
+
+        itemEl.addEventListener('click', (e) => {
+          if (e.target.closest('[data-download-index]')) return;
+          selectQueueItem(index);
+        });
+
+        const dlBtn = itemEl.querySelector('[data-download-index]');
+        if (dlBtn) {
+          dlBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            await downloadSingleItemPdf(index);
+          });
+        }
+
+        dom.queueContainer.appendChild(itemEl);
+      });
+    }
+
+    function selectQueueItem(index) {
+      if (index < 0 || index >= STATE.queue.length) return;
+      STATE.selectedIndex = index;
+      renderQueueList();
+
+      const item = STATE.queue[index];
+      dom.emptyPreviewNotice.classList.add('hidden');
+      dom.previewImage.classList.remove('hidden');
+      dom.previewImage.src = item.previewUrl || item.originalImgUrl;
+      dom.currentImageName.textContent = item.name;
+      dom.imageResolution.textContent = `${item.width} × ${item.height} px`;
+
+      const hasOcr = !!(item.result || item.ocrData);
+      dom.btnExportSinglePdf.disabled = !hasOcr;
+      dom.btnExportSingleTxt.disabled = !hasOcr;
+      dom.btnExportTitleBlockTxt.disabled = !hasOcr;
+
+      if (hasOcr) {
+        populateExtractedText(item.result || item.ocrData, item.height);
+      } else {
+        dom.textContent1.value = item.status === 'Lỗi' ? `Lỗi: ${item.errorMsg}` : '';
+        dom.textTitleBlock.value = '';
+      }
+
+      dom.previewImage.onload = () => {
+        renderOverlayItems();
+      };
+      if (dom.previewImage.complete) {
+        renderOverlayItems();
+      }
+    }
+
+    function resetViewer() {
+      dom.previewImage.src = '';
+      dom.previewImage.classList.add('hidden');
+      dom.overlayLayer.innerHTML = '';
+      dom.emptyPreviewNotice.classList.remove('hidden');
+      dom.currentImageName.textContent = 'Chưa chọn';
+      dom.imageResolution.textContent = '';
+      dom.textContent1.value = '';
+      dom.textTitleBlock.value = '';
+      dom.btnExportSingleTxt.disabled = true;
+      dom.btnExportTitleBlockTxt.disabled = true;
+      dom.btnExportSinglePdf.disabled = true;
+    }
+
+    // --- HIỂN THỊ CHỮ TRÍCH XUẤT LÊN TABS ---
+    function populateExtractedText(ocrData, imgHeight) {
+      if (!ocrData || !ocrData.textItems || ocrData.textItems.length === 0) {
+        dom.textContent1.value = "[Bản vẽ không có văn bản hoặc văn bản không thể xác định]";
+        dom.textTitleBlock.value = "[Không phát hiện cụm Khung tên]";
+        return;
+      }
+
+      // Sắp xếp tự nhiên trên xuống dưới, trái sang phải
+      const sortedItems = [...ocrData.textItems].sort((a, b) => {
+        const topA = a.boundingBox[0];
+        const topB = b.boundingBox[0];
+        if (Math.abs(topA - topB) < 15) {
+          return a.boundingBox[1] - b.boundingBox[1];
+        }
+        return topA - topB;
+      });
+
+      dom.textContent1.value = sortedItems.map(item => item.text.trim()).filter(Boolean).join('\n');
+
+      // Vùng Khung Tên (Title Block): Ymin >= 680, Xmin >= 500
+      const titleBlockItems = sortedItems.filter(item => {
+        const [ymin, xmin] = item.boundingBox;
+        return ymin >= 680 && xmin >= 500;
+      });
+
+      if (titleBlockItems.length > 0) {
+        dom.textTitleBlock.value = titleBlockItems.map(item => item.text.trim()).filter(Boolean).join('\n');
+      } else {
+        dom.textTitleBlock.value = "[Không phát hiện cụm Khung tên ở góc dưới bản vẽ hoặc bản vẽ bố trí dạng khác]";
+      }
+    }
+
+    // --- RENDER OVERLAY TRÊN MÀN HÌNH PREVIEW ---
+    function renderOverlayItems() {
+      dom.overlayLayer.innerHTML = '';
+      if (STATE.selectedIndex === -1) return;
+      const item = STATE.queue[STATE.selectedIndex];
+      const items = item.result?.textItems || item.ocrData?.textItems || [];
+      if (items.length === 0) return;
+
+      const imgWidth = dom.previewImage.clientWidth;
+      const imgHeight = dom.previewImage.clientHeight;
+      if (!imgWidth || !imgHeight) return;
+
+      items.forEach(tItem => {
+        const [ymin, xmin, ymax, xmax] = tItem.boundingBox;
+        const boxTop = (ymin / 1000) * imgHeight;
+        const boxLeft = (xmin / 1000) * imgWidth;
+        const boxWidth = ((xmax - xmin) / 1000) * imgWidth;
+        const boxHeight = ((ymax - ymin) / 1000) * imgHeight;
+
+        const span = document.createElement('div');
+        span.className = 'overlay-box';
+        span.style.top = `${boxTop}px`;
+        span.style.left = `${boxLeft}px`;
+        span.style.width = `${boxWidth}px`;
+        span.style.height = `${boxHeight}px`;
+        span.style.color = STATE.overlayColor;
+        span.style.border = `1.2px solid ${STATE.overlayColor}`;
+        span.style.fontSize = `${Math.max(boxHeight * 0.85, 9)}px`;
+        span.style.backgroundColor = 'rgba(255, 255, 255, 0.4)';
+        if (tItem.rotation) {
+          span.style.transform = `rotate(${tItem.rotation}deg)`;
+          span.style.transformOrigin = 'left top';
+        }
+        span.textContent = tItem.text;
+
+        dom.overlayLayer.appendChild(span);
+      });
+    }
+
+    // --- CHUYỂN TAB ---
+    function switchTab(tabNumber) {
+      STATE.activeTab = tabNumber;
+      if (tabNumber === 1) {
+        dom.tabBtn1.classList.add('border-purple-500', 'text-purple-400');
+        dom.tabBtn1.classList.remove('border-transparent', 'text-slate-400');
+        dom.tabBtn2.classList.remove('border-purple-500', 'text-purple-400');
+        dom.tabBtn2.classList.add('border-transparent', 'text-slate-400');
+        dom.tabContent1.classList.remove('hidden');
+        dom.tabContent2.classList.add('hidden');
+      } else {
+        dom.tabBtn2.classList.add('border-purple-500', 'text-purple-400');
+        dom.tabBtn2.classList.remove('border-transparent', 'text-slate-400');
+        dom.tabBtn1.classList.remove('border-purple-500', 'text-purple-400');
+        dom.tabBtn1.classList.add('border-transparent', 'text-slate-400');
+        dom.tabContent2.classList.remove('hidden');
+        dom.tabContent1.classList.add('hidden');
+      }
+    }
+
+    // --- CÁC HÀM XUẤT FILE & TIỆN ÍCH ---
+    function copyToClipboard(text) {
+      if (!text) return;
+      navigator.clipboard.writeText(text).then(() => {
+        alert('Đã sao chép vào bộ nhớ tạm!');
+      });
+    }
+
+    // Tải lẻ trực tiếp PDF bản vẽ theo index
+    async function downloadSingleItemPdf(index) {
+      const activeItem = STATE.queue[index];
+      if (!activeItem) return;
+
+      if (!activeItem.result && !activeItem.ocrData) {
+        alert("Vui lòng bấm 'Bắt đầu OCR' trước khi tải PDF Overlay để có chữ đè!");
+        return;
+      }
+
+      try {
+        const blob = await generatePdfOverlay(activeItem);
+        if (blob) {
+          downloadBlob(blob, activeItem.name.replace(/\.[^/.]+$/, "") + "_overlay.pdf");
+        }
+      } catch (err) {
+        console.error("Lỗi xuất PDF lẻ:", err);
+        alert("Lỗi tạo PDF: " + (err.message || err));
+      }
+    }
+
+    // Nút Tải PDF Overlay trên thanh công cụ xem chi tiết
+    async function exportSinglePdf() {
+      if (STATE.selectedIndex === -1) return;
+      const activeItem = STATE.queue[STATE.selectedIndex];
+
+      if (!activeItem.result && !activeItem.ocrData) {
+        alert("Vui lòng bấm 'Bắt đầu OCR' trước khi tải PDF Overlay để có chữ đè!");
+        return;
+      }
+
+      const originalText = dom.btnExportSinglePdfText.textContent;
+      try {
+        dom.btnExportSinglePdf.disabled = true;
+        dom.btnExportSinglePdfText.textContent = "Đang tạo...";
+        const blob = await generatePdfOverlay(activeItem);
+        if (blob) {
+          downloadBlob(blob, activeItem.name.replace(/\.[^/.]+$/, "") + "_overlay.pdf");
+        }
+      } catch (err) {
+        console.error("Lỗi xuất PDF:", err);
+        alert("Lỗi tạo PDF: " + (err.message || err));
+      } finally {
+        dom.btnExportSinglePdf.disabled = false;
+        dom.btnExportSinglePdfText.textContent = originalText;
+      }
+    }
+
+    function exportSingleTxt() {
+      if (STATE.selectedIndex === -1) return;
+      const item = STATE.queue[STATE.selectedIndex];
+      const blob = new Blob([dom.textContent1.value || ''], { type: 'text/plain;charset=utf-8' });
+      downloadBlob(blob, `${item.name.replace(/\.[^/.]+$/, '')}.txt`);
+    }
+
+    function exportSingleTitleBlock() {
+      if (STATE.selectedIndex === -1) return;
+      const item = STATE.queue[STATE.selectedIndex];
+      const blob = new Blob([dom.textTitleBlock.value || ''], { type: 'text/plain;charset=utf-8' });
+      downloadBlob(blob, `${item.name.replace(/\.[^/.]+$/, '')}_khung_ten.txt`);
+    }
+
+    // QUY CHUẨN GÓI ZIP "Tất cả (.ZIP)": ĐỦ BỘ 3 FILE MỖI BẢN VẼ
+    async function downloadAllZip() {
+      if (STATE.queue.length === 0) {
+        alert('Chưa có bản vẽ nào trong danh sách.');
+        return;
+      }
+
+      const hasAnyOcr = STATE.queue.some(i => i.result || i.ocrData);
+      if (!hasAnyOcr) {
+        alert("Vui lòng bấm 'Bắt đầu OCR' trước khi tải gói ZIP để có chữ đè!");
+        return;
+      }
+
+      const JSZipClass = window.JSZip || (typeof JSZip !== 'undefined' ? JSZip : null);
+      if (!JSZipClass) {
+        alert("Thư viện nén ZIP chưa sẵn sàng!");
+        return;
+      }
+      const zip = new JSZipClass();
+
+      dom.btnDownloadAllZip.disabled = true;
+      const originalBtnText = dom.btnDownloadAllZipText.textContent;
+      dom.btnDownloadAllZipText.textContent = "Đang nén...";
+
+      try {
+        for (let i = 0; i < STATE.queue.length; i++) {
+          const item = STATE.queue[i];
+          const stt = String(i + 1).padStart(2, '0');
+          const cleanName = item.name.replace(/\.[^/.]+$/, '');
+          const prefix = `${stt}_${cleanName}`;
+
+          // File 1: Text 1 cột
+          const textItems = item.result?.textItems || item.ocrData?.textItems || [];
+          const sortedItems = [...textItems].sort((a, b) => a.boundingBox[0] - b.boundingBox[0]);
+          const fullTxt = sortedItems.map(it => it.text.trim()).join('\n');
+          zip.file(`${prefix}.txt`, fullTxt || '[Bản vẽ chưa nhận dạng hoặc không có chữ]');
+
+          // File 2: Khung tên
+          const tbItems = sortedItems.filter(it => it.boundingBox[0] >= 680 && it.boundingBox[1] >= 500);
+          const tbTxt = tbItems.map(it => it.text.trim()).join('\n');
+          zip.file(`${prefix}_khung_ten.txt`, tbTxt || '[Không phát hiện khung tên]');
+
+          // File 3: PDF Vector Overlay (Thêm trực tiếp blob vào file nén JSZip)
+          try {
+            const blob = await generatePdfOverlay(item);
+            if (blob) {
+              zip.file(`${prefix}_overlay.pdf`, blob);
+            }
+          } catch (pdfErr) {
+            console.error(`Bỏ qua lỗi xuất PDF bản vẽ ${cleanName}:`, pdfErr);
+          }
+        }
+
+        const zipContent = await zip.generateAsync({ type: 'blob' });
+        downloadBlob(zipContent, `CAD_Batch_All_v30.0_${Date.now()}.zip`);
+      } catch (err) {
+        console.error("Lỗi khi tạo gói All ZIP:", err);
+        alert("Lỗi xuất gói ZIP: " + (err.message || err));
+      } finally {
+        dom.btnDownloadAllZip.disabled = false;
+        dom.btnDownloadAllZipText.textContent = originalBtnText;
+      }
+    }
+
+    // NÚT "PDF .ZIP": CHỨA TOÀN BỘ FILE _overlay.pdf
+    async function downloadPdfZip() {
+      if (STATE.queue.length === 0) {
+        alert('Chưa có bản vẽ nào trong danh sách.');
+        return;
+      }
+
+      const hasAnyOcr = STATE.queue.some(i => i.result || i.ocrData);
+      if (!hasAnyOcr) {
+        alert("Vui lòng bấm 'Bắt đầu OCR' trước khi tải gói ZIP để có chữ đè!");
+        return;
+      }
+
+      const JSZipClass = window.JSZip || (typeof JSZip !== 'undefined' ? JSZip : null);
+      if (!JSZipClass) {
+        alert("Thư viện nén ZIP chưa sẵn sàng!");
+        return;
+      }
+      const zip = new JSZipClass();
+
+      dom.btnDownloadPdfZip.disabled = true;
+      const originalBtnText = dom.btnDownloadPdfZipText.textContent;
+      dom.btnDownloadPdfZipText.textContent = "Đang nén...";
+
+      try {
+        for (let i = 0; i < STATE.queue.length; i++) {
+          const item = STATE.queue[i];
+          const stt = String(i + 1).padStart(2, '0');
+          const cleanName = item.name.replace(/\.[^/.]+$/, '');
+          const prefix = `${stt}_${cleanName}`;
+
+          try {
+            const blob = await generatePdfOverlay(item);
+            if (blob) {
+              zip.file(`${prefix}_overlay.pdf`, blob);
+            }
+          } catch (pdfErr) {
+            console.error(`Bỏ qua lỗi xuất PDF bản vẽ ${cleanName}:`, pdfErr);
+          }
+        }
+
+        const zipContent = await zip.generateAsync({ type: 'blob' });
+        downloadBlob(zipContent, `CAD_PDF_Overlays_v30.0_${Date.now()}.zip`);
+      } catch (err) {
+        console.error("Lỗi khi tạo gói PDF ZIP:", err);
+        alert("Lỗi xuất PDF ZIP: " + (err.message || err));
+      } finally {
+        dom.btnDownloadPdfZip.disabled = false;
+        dom.btnDownloadPdfZipText.textContent = originalBtnText;
+      }
+    }
+
+    // Kích hoạt ứng dụng
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>
